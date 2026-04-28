@@ -1,0 +1,12 @@
+[project]
+name = "anaconda-data-app-contest-2023"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "colorcet>=3.1.0",
+    "holoviews>=1.22.1",
+    "panel>=1.8.10",
+    "panel-material-ui>=0.9.1",
+]

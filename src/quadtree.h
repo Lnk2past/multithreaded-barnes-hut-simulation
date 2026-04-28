@@ -1,10 +1,9 @@
 #pragma once
 
-#include <array>
-#include <iostream>
-#include <memory>
-
 #include "particle.h"
+
+#include <array>
+#include <memory>
 
 struct QuadTree
 {
@@ -23,10 +22,10 @@ struct QuadTree
     std::array<double, 2> center {0.0, 0.0};
     double m {0.0};
 
-    std::unique_ptr<QuadTree>& _get_quadrant(Particle &e)
+    auto _get_quadrant(Particle &e) -> std::unique_ptr<QuadTree>&
     {
-        double dxh = 0.5 * (ur[0] + ll[0]);
-        double dyh = 0.5 * (ur[1] + ll[1]);
+        auto dxh = 0.5 * (ur[0] + ll[0]);
+        auto dyh = 0.5 * (ur[1] + ll[1]);
         if (e.x > dxh && e.y >= dyh)
         {
             if (!ne)
@@ -61,7 +60,7 @@ struct QuadTree
         }
     }
 
-    void _subdivide(Particle &e)
+    auto _subdivide(Particle &e) -> void
     {
         auto &existing_particle_quadrant = _get_quadrant(*particle);
         auto _particle = particle;
@@ -72,7 +71,7 @@ struct QuadTree
         new_particle_quadrant->add(e);
     }
 
-    void add(Particle &e)
+    auto add(Particle &e) -> void
     {
         if (ne || nw || sw || se)
         {
@@ -89,7 +88,7 @@ struct QuadTree
         }
     }
 
-    void get_cogs()
+    auto get_cogs() -> void
     {
         if (particle)
         {
@@ -133,7 +132,7 @@ struct QuadTree
         }
     }
 
-   void force(Particle &e)
+   auto force(Particle &e) -> void
    {
         if (particle)
         {
@@ -144,9 +143,9 @@ struct QuadTree
         }
         else
         {
-            double dx = center[0] - e.x;
-            double dy = center[1] - e.y;
-            double d = std::hypot(dx, dy);
+            auto dx = center[0] - e.x;
+            auto dy = center[1] - e.y;
+            auto d = std::sqrt(dx * dx + dy * dy);
 
             if ((ur[0] - ll[0]) / d < theta)
             {
@@ -174,7 +173,7 @@ struct QuadTree
         }
     }
 
-    void get_extents(std::vector<std::array<double, 4>> &extents)
+    auto get_extents(std::vector<std::array<double, 4>> &extents) -> void
     {
         if (particle)
         {
@@ -195,30 +194,6 @@ struct QuadTree
         if (se)
         {
             se->get_extents(extents);
-        }
-    }
-
-    void print()
-    {
-        if (ne)
-        {
-            ne->print();
-        }
-        if (nw)
-        {
-            nw->print();
-        }
-        if (sw)
-        {
-            sw->print();
-        }
-        if (se)
-        {
-            se->print();
-        }
-        if (particle)
-        {
-            std::cout << ll[0] << " " << ll[1] << " " << ur[0] << " " << ur[1] << std::endl;
         }
     }
 };

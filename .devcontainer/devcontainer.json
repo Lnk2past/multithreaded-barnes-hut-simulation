@@ -1,5 +1,5 @@
 {
-    "image": "lnk2past/anaconda-data-app-contest-2023:latest",
+    "image": "lnk2past/turtleshell:latest",
     "forwardPorts": [5006],
     "customizations": {
         "vscode": {

@@ -5,46 +5,64 @@ namespace py = pybind11;
 #include "particle_system.h"
 #include "syncable.h"
 
+#include <print>
 
 struct MultithreadedParticleSystem : ParticleSystem {
-    MultithreadedParticleSystem(const int num_particles, const double bounds, const int seed, const double theta, const double dt, const std::size_t num_threads):
+    MultithreadedParticleSystem(
+        const int num_particles,
+        const double bounds,
+        const double theta,
+        const uint64_t seed,
+        const double dt,
+        const std::size_t num_threads
+    ):
         ParticleSystem(num_particles, bounds, theta, seed),
         delta_time(dt),
         pool(num_threads)
     {
-        auto slice_size = num_particles / num_threads;
-        for (int i = 0; i < num_threads; ++i)
+        auto slice_size = (num_particles + num_threads - 1) / num_threads;
+        for (auto i = size_t{}; i < num_threads; ++i)
         {
-            callables.emplace_back(
-                std::bind(
-                    &ParticleSystem::collect_forces,
-                    std::ref(*this),
-                    i * slice_size,
-                    slice_size
-                )
-            );
+            pool.threads.emplace_back([this, start=i * slice_size, count=slice_size](std::stop_token st)
+            {
+                while (!st.stop_requested())
+                {
+                    pool.sync_point_1.arrive_and_wait();
+                    if (st.stop_requested())
+                    {
+                        break;
+                    }
+                    this->collect_forces(start, count);
+                    pool.sync_point_2.arrive_and_wait();
+                }
+            });
         }
-        pool.initialize(callables);
     }
 
-    void update() {
+    auto update() -> void
+    {
         build_tree();
         pool.trigger();
         integrate(delta_time);
         simulation_time += delta_time;
     }
 
-    std::vector<std::function<void(void)>> callables;
+    auto request_stop() -> void
+    {
+        pool.request_stop();
+    }
+
+    std::vector<std::function<void(void)>> callables{};
     double simulation_time = 0.0;
     double delta_time = 1.0;
-
     Syncable pool;
 };
 
-PYBIND11_MODULE(ParticleModel, m) {
+PYBIND11_MODULE(PyModel, m) {
     py::class_<MultithreadedParticleSystem>(m, "MultithreadedParticleSystem")
-        .def(py::init<const int, const double, const int, const double, const double, const std::size_t>())
+        .def(py::init<const int, const double, const double, const uint64_t, const double, const std::size_t>())
         .def("update", &MultithreadedParticleSystem::update)
+        .def("request_stop", &MultithreadedParticleSystem::request_stop)
         .def("get_extents", &MultithreadedParticleSystem::get_extents)
         .def_readwrite("ll", &MultithreadedParticleSystem::ll)
         .def_readwrite("ur", &MultithreadedParticleSystem::ur)

@@ -2,17 +2,17 @@
 
 Defines a Panel dashboard for visualizing the native ParticleModel extension
 """
-import functools
 import os
-import colorcet as cc   # for better colormaps
-import holoviews as hv  # for plotting
-import numpy as np      # for some data manipulations
-import pandas as pd     # for setting up our data
-import panel as pn      # for dashboarding
-import param as pr      # for a typehint
-from holoviews.streams import Pipe        # for continuously streaming data to the plot
+import colorcet as cc
+import holoviews as hv
+import numpy as np
+import pandas as pd
+import panel as pn
+import panel_material_ui as pmui
+import param as pr
+from holoviews.streams import Pipe
 
-from ParticleModel import MultithreadedParticleSystem  # our C++ model!
+from PyModel import MultithreadedParticleSystem
 
 
 def update_model() -> None:
@@ -69,12 +69,12 @@ def play(event: pr.parameterized.Event) -> None:
     """
     global periodic_callback
     if periodic_callback is None or not periodic_callback.running:
-        play_button.name = 'Stop'
+        play_button.label = 'Stop'
         # set the periodic to call our run_model callback at 30 frames per second
         periodic_callback = pn.state.add_periodic_callback(update_model, period=1000//fps_slider.value)
         table.disabled = True
     elif periodic_callback.running:
-        play_button.name = 'Play'
+        play_button.label = 'Play'
         periodic_callback.stop()
         table.disabled = False
         particle_data = pd.DataFrame([[particle.x, particle.y, particle.m] for particle in model.particles], columns=['x','y','m'])
@@ -93,11 +93,13 @@ def reset(event: pr.parameterized.Event | None) -> None:
     """
     global model, periodic_callback, framewise
     if periodic_callback is not None and periodic_callback.running:
-        play_button.name = 'Play'
+        play_button.label = 'Play'
         periodic_callback.stop()
     periodic_callback = None
     num_particles = num_particles_slider.value * thread_count_slider.value
-    model = MultithreadedParticleSystem(num_particles, bounds_slider.value, seed_input.value, theta_slider.value, time_delta_slider.value, thread_count_slider.value)
+    if model is not None:
+        model.request_stop()
+    model = MultithreadedParticleSystem(num_particles, bounds_slider.value, theta_slider.value, seed_input.value, time_delta_slider.value, thread_count_slider.value)
     for particle in model.particles:
         r = np.hypot(particle.x, particle.y)
         if r > 1.0e-8:
@@ -138,7 +140,7 @@ model = None
 particle_pipe = Pipe(data=[])
 
 # create a table view for the data
-table = pn.widgets.Tabulator(disabled=False, pagination='local', page_size=10)
+table = pn.widgets.Tabulator(disabled=False, show_index=False, pagination='local', page_size=20)
 table.on_edit(edit_model)
 
 # create a global periodic callback - with it being global and persisted we can
@@ -147,35 +149,32 @@ periodic_callback = None
 framewise = True
 
 # play button, with the play callback attached to the on-click event of the button 
-play_button = pn.widgets.Button(name='Play', sizing_mode='stretch_width')
-play_button.on_click(play)
+play_button = pmui.Button(name='Play', on_click=play, sizing_mode='stretch_width')
 
 # reset button, with the reset callback attached to the on-click event of the button 
-reset_button = pn.widgets.Button(name='Reset', sizing_mode='stretch_width')
-reset_button.on_click(reset)
+reset_button = pmui.Button(name='Reset', on_click=reset, sizing_mode='stretch_width')
 
-open_readme_button = pn.widgets.Button(name='Readme', sizing_mode='stretch_width')
-open_readme_button.on_click(open_readme)
+open_readme_button = pmui.Button(name='Readme', on_click=open_readme, sizing_mode='stretch_width')
 
 # input widgets for various options
-seed_input = pn.widgets.IntInput(name='Random Seed', value=1337)
-num_particles_slider = pn.widgets.FloatSlider(name='Particles per Thread', start=1, end=1000, step=1, value=100)
-bounds_slider = pn.widgets.FloatSlider(name='Bounds', start=25, end=2500, value=100, step=25)
-time_delta_slider = pn.widgets.FloatSlider(name='Time Delta (s)', start=0.1, end=1.0, value=0.1, step=0.1)
+seed_input = pmui.IntInput(name='Random Seed', value=1337)
+num_particles_slider = pmui.FloatSlider(name='Particles per Thread', start=1, end=4000, step=1, value=100)
+bounds_slider = pmui.FloatSlider(name='Bounds', start=25, end=2500, value=250, step=25)
+time_delta_slider = pmui.FloatSlider(name='Time Delta (s)', start=0.1, end=1.0, value=0.1, step=0.1)
 
-theta_slider = pn.widgets.FloatSlider(name='Theta', start=0.0, end=2.0, value=0.5, step=0.1)
+theta_slider = pmui.FloatSlider(name='Theta', start=0.0, end=2.0, value=0.5, step=0.1)
 
 thread_count = [2 ** i for i in range(int(np.log2(os.cpu_count())))]
-thread_count_slider = pn.widgets.DiscreteSlider(name='Thread Count', options=thread_count)
+thread_count_slider = pmui.DiscreteSlider(name='Thread Count', options=thread_count)
 
-fps_slider = pn.widgets.IntSlider(name='FPS', start=1, end=60, value=30, step=1)
-quadtree_display = pn.widgets.Toggle(name='Display Quadtree', sizing_mode='stretch_width')
-auto_scale_axes = pn.widgets.Toggle(name='Auto Scale Axes', sizing_mode='stretch_width')
+fps_slider = pmui.IntSlider(name='FPS', start=1, end=60, value=25, step=1)
+quadtree_display = pmui.Toggle(name='Display Quadtree', sizing_mode='stretch_width')
+auto_scale_axes = pmui.Toggle(name='Auto Scale Axes', sizing_mode='stretch_width')
 
 # upon loading the dashboard, reset the model and view
 pn.state.onload(lambda: reset(None))
 
-readme = pn.pane.Markdown('''## Multithreaded N-Body
+readme = pmui.Typography('''## Multithreaded N-Body
 
 According to Wikipedia, the [n-body problem](https://en.wikipedia.org/wiki/N-body_problem) is...
 
@@ -187,7 +186,7 @@ According to Wikipedia, the [n-body problem](https://en.wikipedia.org/wiki/N-bod
     considerably more difficult to solve due to additional factors like time and space
     distortions.
 
-and a [Barnes–Hut simulation](https://en.wikipedia.org/wiki/Barnes%E2%80%93Hut_simulation) is...
+and a [Barnes-Hut simulation](https://en.wikipedia.org/wiki/Barnes%E2%80%93Hut_simulation) is...
 
     an approximation algorithm for performing an n-body simulation. It is notable for
     having order O(n log n) compared to a direct-sum algorithm which would be O(n2).
@@ -221,12 +220,11 @@ While the simulation is not running, you have the option of modifying the positi
 ''')
 
 # assemble everything in one of the built-in templates
-app = pn.template.BootstrapTemplate(
-    site="N-Body System",
+app = pmui.Page(
     title="Barnes-Hut & Multithreading",
     theme='dark',
     main=[
-        pn.Row(# this is important! the DynamicMap ties the plotting callback to the pipe!
+        pmui.Row(# this is important! the DynamicMap ties the plotting callback to the pipe!
             hv.DynamicMap(visualize_model, streams=[particle_pipe]).opts(
                 toolbar='above',
                 height=640,
@@ -235,26 +233,26 @@ app = pn.template.BootstrapTemplate(
             table
     )],
     sidebar=[
-        pn.WidgetBox(open_readme_button, width=321),
-        pn.WidgetBox(
-            pn.panel('Simulation Options'),
+        # pmui.FlexBox(open_readme_button, width=321),
+        pmui.FlexBox(
+            'Simulation Options',
             num_particles_slider,
             bounds_slider,
             time_delta_slider,
         ),
-        pn.WidgetBox(
-            pn.panel('Performance Options'),
+        pmui.FlexBox(
+            'Performance Options',
             seed_input,
             theta_slider,
             thread_count_slider
         ),
-        pn.WidgetBox(
-            pn.panel('Playback Options'),
+        pmui.FlexBox(
+            'Playback Options',
             fps_slider,
-            pn.Row(quadtree_display, width=321),
-            pn.Row(play_button, reset_button, width=321)
+            pmui.Row(quadtree_display, width=321),
+            pmui.Row(play_button, reset_button, width=321)
         )
     ],
-    modal=readme
+    # modal=readme
 )
 app.servable()

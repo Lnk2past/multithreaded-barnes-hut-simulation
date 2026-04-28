@@ -1,9 +1,8 @@
 #pragma once
 
 #include <cmath>
-#include <iostream>
 
-constexpr double G = 6.67408e-11;
+static constexpr auto G = 6.67408e-11;
 
 struct Particle
 {
@@ -15,23 +14,23 @@ struct Particle
     double ay = 0.0;
     double m = 5.0e6;
 
-    void force(const Particle &o)
+    auto force(const Particle &o) -> void
     {
-        double dx = o.x - x;
-        double dy = o.y - y;
+        auto dx = o.x - x;
+        auto dy = o.y - y;
         force(dx, dy, o.m);
     }
 
-    void force(const double dx, const double dy, const double omass)
+    auto force(const double dx, const double dy, const double omass) -> void
     {
-        double d = std::hypot(dx, dy);
-        double t = std::atan2(dy, dx);
-        double f = G * omass / (d * d);
-        ax += f * std::cos(t);
-        ay += f * std::sin(t);
+        auto d2 = dx * dx + dy * dy;
+        auto d = std::sqrt(d2);
+        auto f = G * omass / d2;
+        ax += f * dx / d;
+        ay += f * dy / d;
     }
 
-    void integrate(const double dt)
+    auto integrate(const double dt) -> void
     {
         vx += ax * dt;
         vy += ay * dt;
@@ -39,10 +38,5 @@ struct Particle
         y += vy * dt;
         ax = 0.0;
         ay = 0.0;
-    }
-
-    void print()
-    {
-        std::cout << "<" << x << "," << y << ">" << std::endl;
     }
 };

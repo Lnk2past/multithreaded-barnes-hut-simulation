@@ -1,34 +1,34 @@
 #pragma once
 
+#include "particle.h"
+#include "quadtree.h"
+
 #include <array>
 #include <random>
 #include <vector>
 
-#include "particle.h"
-#include "quadtree.h"
-
-
 struct ParticleSystem {
     std::array<double, 2> ll {-1, -1};
     std::array<double, 2> ur {1, 1};
-    QuadTree qt;
-    double theta;
+    QuadTree qt{};
+    double theta{};
+    std::vector<Particle> particles{};
 
-    ParticleSystem(const int num_particles, const double bounds, const double default_theta, const int seed=1337):
+    ParticleSystem(const int num_particles, const double bounds, const double default_theta, const std::uint64_t seed=1337):
         ll {-bounds, -bounds},
         ur {bounds, bounds},
-        theta (default_theta)
+        theta (default_theta),
+        particles(num_particles)
     {
-        std::mt19937 eng(seed);
-        std::uniform_real_distribution<double> dis(-bounds, bounds);
-        particles.reserve(num_particles);
-        for (auto i = 0; i < num_particles-1; ++i) {
-            auto &p = particles.emplace_back(dis(eng), dis(eng));
-        }
-        particles.emplace_back(0, 0, 0, 0, 0, 0, 1e12);
+        auto generator = [eng = std::mt19937{seed}, dis = std::uniform_real_distribution<double>{-bounds, bounds}]() mutable -> Particle
+        {
+            return {dis(eng), dis(eng)};
+        };
+        std::ranges::generate_n(particles.begin(), num_particles-1, generator);
+        particles.back() = Particle{.m=1e12};
     }
 
-    void build_tree()
+    auto build_tree() -> void
     {
         qt = {.theta=theta, .ll=ll, .ur=ur};
         for (auto &e : particles)
@@ -38,15 +38,16 @@ struct ParticleSystem {
         qt.get_cogs();
     }
 
-    void collect_forces(std::size_t start, std::size_t count)
+    auto collect_forces(std::size_t start, std::size_t count) -> void
     {
         for (auto i = start; i < start + count; ++i) {
             qt.force(particles[i]);
         }
     }
 
-    void integrate(const double delta_time) {
-        double bounds = 0.0;
+    auto integrate(const double delta_time) -> void
+    {
+        auto bounds = 0.0;
         for (auto &e : particles)
         {
             e.integrate(delta_time);
@@ -64,12 +65,10 @@ struct ParticleSystem {
         ur = {bounds, bounds};
     }
 
-    std::vector<std::array<double, 4>> get_extents()
+    auto get_extents() -> std::vector<std::array<double, 4>>
     {
-        std::vector<std::array<double, 4>> extents;
+        auto extents = std::vector<std::array<double, 4>>{};
         qt.get_extents(extents);
         return extents;
     }
-
-    std::vector<Particle> particles;
 };
