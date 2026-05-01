@@ -5,8 +5,83 @@
 #include <array>
 #include <memory>
 
+
 struct QuadTree
 {
+    struct QuadTreeArena {
+        std::vector<QuadTree> pool;
+        size_t next = 0;
+
+        QuadTreeArena(size_t size) : pool(4 * size, *this)
+        {}
+
+        QuadTree* alloc() {
+            assert(next < pool.size() && "QuadTree arena exhausted");
+            auto* node = &pool[next++];
+            node->reset();
+            return node;
+        }
+
+        auto reset() -> void { next = 0; }
+    };
+
+    QuadTree(QuadTreeArena &_arena) :
+        arena(_arena)
+    {
+    }
+
+    QuadTree(double _theta, std::array<double, 2> _ll, std::array<double, 2> _ur, QuadTreeArena &_arena) :
+        theta(_theta),
+        ll(_ll),
+        ur(_ur),
+        arena(_arena)
+    {
+    }
+
+    QuadTree(const QuadTree& o) :
+        theta(o.theta),
+        ll(o.ll),
+        ur(o.ur),
+        arena(o.arena)
+    {
+    }
+
+    auto operator=(const QuadTree& o) -> QuadTree&
+    {
+        theta = o.theta;
+        ll = o.ll;
+        ur = o.ur;
+        return *this;
+    }
+
+    QuadTree(QuadTree&& o) :
+        theta(std::move(o.theta)),
+        ll(std::move(o.ll)),
+        ur(std::move(o.ur)),
+        arena(o.arena)
+    {
+    }
+
+    auto operator=(QuadTree&& o) -> QuadTree&
+    {
+        theta = std::move(o.theta);
+        ll = std::move(o.ll);
+        ur = std::move(o.ur);
+        return *this;
+    }
+
+    auto reset() -> void
+    {
+        particle = nullptr;
+        ne = nullptr;
+        nw = nullptr;
+        sw = nullptr;
+        se = nullptr;
+        m = 0.0;
+        center = {0.0, 0.0};
+    }
+
+
     double theta = 0.5;
 
     std::array<double, 2> ll {-1.0, -1.0};
@@ -14,15 +89,16 @@ struct QuadTree
 
     Particle *particle {nullptr};
 
-    std::unique_ptr<QuadTree> ne {nullptr};
-    std::unique_ptr<QuadTree> nw {nullptr};
-    std::unique_ptr<QuadTree> sw {nullptr};
-    std::unique_ptr<QuadTree> se {nullptr};
+    QuadTreeArena &arena;
+    QuadTree* ne = nullptr;
+    QuadTree* nw = nullptr;
+    QuadTree* sw = nullptr;
+    QuadTree* se = nullptr;
 
     std::array<double, 2> center {0.0, 0.0};
     double m {0.0};
 
-    auto _get_quadrant(Particle &e) -> std::unique_ptr<QuadTree>&
+    auto _get_quadrant(Particle &e) -> QuadTree*
     {
         auto dxh = 0.5 * (ur[0] + ll[0]);
         auto dyh = 0.5 * (ur[1] + ll[1]);
@@ -30,7 +106,8 @@ struct QuadTree
         {
             if (!ne)
             {
-                ne.reset(new QuadTree {theta, {dxh, dyh}, ur});
+                ne = arena.alloc();
+                *ne = QuadTree(theta, {dxh, dyh}, ur, arena);
             }
             return ne;
         }
@@ -38,7 +115,8 @@ struct QuadTree
         {
             if (!nw)
             {
-                nw.reset(new QuadTree {theta, {ll[0], dyh}, {dxh, ur[1]}});
+                nw = arena.alloc();
+                *nw = QuadTree(theta, {ll[0], dyh}, {dxh, ur[1]}, arena);
             }
             return nw;
         }
@@ -46,7 +124,8 @@ struct QuadTree
         {
             if (!sw)
             {
-                sw.reset(new QuadTree {theta, ll, {dxh, dyh}});
+                sw = arena.alloc();
+                *sw = QuadTree(theta, ll, {dxh, dyh}, arena);
             }
             return sw;
         }
@@ -54,7 +133,8 @@ struct QuadTree
         {
             if (!se)
             {
-                se.reset(new QuadTree {theta, {dxh, ll[1]}, {ur[0], dyh}});
+                se = arena.alloc();
+                *se = QuadTree(theta, {dxh, ll[1]}, {ur[0], dyh}, arena);
             }
             return se;
         }
@@ -62,12 +142,12 @@ struct QuadTree
 
     auto _subdivide(Particle &e) -> void
     {
-        auto &existing_particle_quadrant = _get_quadrant(*particle);
+        auto existing_particle_quadrant = _get_quadrant(*particle);
         auto _particle = particle;
         particle = nullptr;
         existing_particle_quadrant->add(*_particle);
 
-        auto &new_particle_quadrant = _get_quadrant(e);
+        auto new_particle_quadrant = _get_quadrant(e);
         new_particle_quadrant->add(e);
     }
 
@@ -75,7 +155,7 @@ struct QuadTree
     {
         if (ne || nw || sw || se)
         {
-            auto &particle_quadrant = _get_quadrant(e);
+            auto particle_quadrant = _get_quadrant(e);
             particle_quadrant->add(e);
         }
         else if (particle)
@@ -145,9 +225,10 @@ struct QuadTree
         {
             auto dx = center[0] - e.x;
             auto dy = center[1] - e.y;
-            auto d = std::sqrt(dx * dx + dy * dy);
+            auto d2 = dx * dx + dy * dy;
 
-            if ((ur[0] - ll[0]) / d < theta)
+            const auto width = ur[0] - ll[0];
+            if (width * width < theta * theta * d2)
             {
                 e.force(dx, dy, m);
             }

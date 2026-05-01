@@ -15,6 +15,17 @@ from holoviews.streams import Pipe
 from PyModel import MultithreadedParticleSystem
 
 
+hv.extension("bokeh")
+
+
+hv.opts.defaults(
+    hv.opts.Points("particles", color=hv.dim('m'), cnorm='log', cmap=cc.CET_L19),
+    hv.opts.Rectangles("extents", fill_color=None, line_color='yellow'),
+    hv.opts.Rectangles("extents.show", alpha=0.25),
+    hv.opts.Rectangles("extents.hidden", alpha=0.0),
+);
+
+
 def update_model() -> None:
     """Callback that is executed by periodic callback managed by the dashboard.
     
@@ -22,8 +33,8 @@ def update_model() -> None:
     model data is packed into a dataframe and sent through the pipe.
     """
     model.update()
-    particle_data = pd.DataFrame([[particle.x, particle.y, particle.m] for particle in model.particles], columns=['x','y','m'])
-    extent_data = pd.DataFrame([extent for extent in model.get_extents()], columns=['x0', 'y0', 'x1', 'y1'])
+    particle_data = pd.DataFrame(model.get_entities(), copy=False)
+    extent_data = pd.DataFrame(model.get_extents(), copy=False)
     particle_pipe.send((particle_data, extent_data))
     table.value = particle_data
 
@@ -48,14 +59,11 @@ def visualize_model(data) -> hv.core.overlay.Overlay:
     points = hv.Points(
         particle_data,
         kdims=['x', 'y'],
-        vdims=['m']).opts(
-            color=hv.dim('m'),
-            cnorm='log',
-            cmap=cc.CET_L19,
-            framewise=framewise
-        )
-    rectangles = hv.Rectangles(extent_data).opts(fill_color=None, line_color='yellow', alpha=(0.25 * int(quadtree_display.value))).opts(framewise=framewise)
-    return (points * rectangles).opts(framewise=framewise, frame_height=640, frame_width=640)
+        vdims=['m'],
+        group="particles"
+    )
+    rectangles = hv.Rectangles(extent_data, group="extents", label=("show" if quadtree_display.value else "hidden"))
+    return (points * rectangles)
 
 def play(event: pr.parameterized.Event) -> None:
     """Callback to play the simulation.
@@ -77,8 +85,8 @@ def play(event: pr.parameterized.Event) -> None:
         play_button.label = 'Play'
         periodic_callback.stop()
         table.disabled = False
-        particle_data = pd.DataFrame([[particle.x, particle.y, particle.m] for particle in model.particles], columns=['x','y','m'])
-        extent_data = pd.DataFrame([extent for extent in model.get_extents()], columns=['x0', 'y0', 'x1', 'y1'])
+        particle_data = pd.DataFrame(model.get_entities(), copy=False)
+        extent_data = pd.DataFrame(model.get_extents(), copy=False)
         particle_pipe.send((particle_data, extent_data))
 
 def reset(event: pr.parameterized.Event | None) -> None:
@@ -91,7 +99,7 @@ def reset(event: pr.parameterized.Event | None) -> None:
         event: the click event (or None when initialized) that triggered the
         callback
     """
-    global model, periodic_callback, framewise
+    global model, periodic_callback
     if periodic_callback is not None and periodic_callback.running:
         play_button.label = 'Play'
         periodic_callback.stop()
@@ -100,21 +108,14 @@ def reset(event: pr.parameterized.Event | None) -> None:
     if model is not None:
         model.request_stop()
     model = MultithreadedParticleSystem(num_particles, bounds_slider.value, theta_slider.value, seed_input.value, time_delta_slider.value, thread_count_slider.value)
-    for particle in model.particles:
-        r = np.hypot(particle.x, particle.y)
-        if r > 1.0e-8:
-            particle.vx = -particle.y / r
-            particle.vy = particle.x / r
-    particle_data = pd.DataFrame([[particle.x, particle.y, particle.m] for particle in model.particles], columns=['x','y','m'])
+    particle_data = pd.DataFrame(model.get_entities(), copy=False)
     extent_data = pd.DataFrame({
         'x0':[-bounds_slider.value],
         'y0':[-bounds_slider.value],
         'x1':[bounds_slider.value],
         'y1':[bounds_slider.value]
     })
-    framewise = True
     particle_pipe.send((particle_data, extent_data))
-    framewise = False
     table.value = particle_data
     table.disabled = False
 
@@ -129,8 +130,8 @@ def edit_model(event):
         model.particles[event.row].y = event.value
     elif event.column == 'm':
         model.particles[event.row].m = event.value
-    particle_data = pd.DataFrame([[particle.x, particle.y, particle.m] for particle in model.particles], columns=['x','y','m'])
-    extent_data = pd.DataFrame([extent for extent in model.get_extents()], columns=['x0', 'y0', 'x1', 'y1'])
+    particle_data = pd.DataFrame(model.get_entities(), copy=False)
+    extent_data = pd.DataFrame(model.get_extents(), copy=False)
     particle_pipe.send((particle_data, extent_data))
 
 # create a global for the model
@@ -146,7 +147,6 @@ table.on_edit(edit_model)
 # create a global periodic callback - with it being global and persisted we can
 # start and stop it at will
 periodic_callback = None
-framewise = True
 
 # play button, with the play callback attached to the on-click event of the button 
 play_button = pmui.Button(name='Play', on_click=play, sizing_mode='stretch_width')
@@ -174,61 +174,17 @@ auto_scale_axes = pmui.Toggle(name='Auto Scale Axes', sizing_mode='stretch_width
 # upon loading the dashboard, reset the model and view
 pn.state.onload(lambda: reset(None))
 
-readme = pmui.Typography('''## Multithreaded N-Body
-
-According to Wikipedia, the [n-body problem](https://en.wikipedia.org/wiki/N-body_problem) is...
-
-    ... the problem of predicting the individual motions of a group of celestial objects
-    interacting with each other gravitationally. Solving this problem has been motivated
-    by the desire to understand the motions of the Sun, Moon, planets, and visible stars.
-    In the 20th century, understanding the dynamics of globular cluster star systems
-    became an important n-body problem.[2] The n-body problem in general relativity is
-    considerably more difficult to solve due to additional factors like time and space
-    distortions.
-
-and a [Barnes-Hut simulation](https://en.wikipedia.org/wiki/Barnes%E2%80%93Hut_simulation) is...
-
-    an approximation algorithm for performing an n-body simulation. It is notable for
-    having order O(n log n) compared to a direct-sum algorithm which would be O(n2).
-
-This dashboard visualizes a multithreaded C++ implementation of a Barnes-Hut simulation. Particles are represented by point-masses, colored by mass. Yellow bounding boxes indicate subdivisions of the quadtree.
-
-### Controls
-
-* `Particles per Thread`: Number of particles to spawn per thread utilized.
-* `Bounds`: Initial bounds to spawn particles within (lower left and upper right taken as (-b, -b) and (b, b)).
-* `Time Delta (s)`: The size of the time step to use for integration
-
----
-
-* `Random Seed`: The initial random seed
-* `Theta`: Barnes-Hut control parameter; lower values improve accuracy but decrease performance. Default of 0.5 provides great balance of realism and performance.
-* `Thread Count`: Number of threads to use
-
----
-
-* `FPS`: Frames-Per-Second, or how fastthe playback is. If this is faster than the model, then stuttering will occur.
-* `Display Quadtree`: Render the quadtree subdivisions.
-* `Play`: Play the simulation with the current configuration, or unpause the simulation (turns to `Stop`).
-* `Stop`: Pause the currently running simulation (turns to `Play`).
-* `Reset`: Reset the simulation state to the selected configuration options.
-
-### Modifying Simulation Data
-
-While the simulation is not running, you have the option of modifying the position and mass of the particles in the simulation. Simply stop the simulation, and modify values in the table directly.
-
-''')
-
 # assemble everything in one of the built-in templates
 app = pmui.Page(
     title="Barnes-Hut & Multithreading",
     theme='dark',
     main=[
-        pmui.Row(# this is important! the DynamicMap ties the plotting callback to the pipe!
+        pmui.Row(
             hv.DynamicMap(visualize_model, streams=[particle_pipe]).opts(
                 toolbar='above',
                 height=640,
-                width=640
+                width=640,
+                show_legend=False
             ),
             table
     )],
@@ -252,7 +208,6 @@ app = pmui.Page(
             pmui.Row(quadtree_display, width=321),
             pmui.Row(play_button, reset_button, width=321)
         )
-    ],
-    # modal=readme
+    ]
 )
 app.servable()

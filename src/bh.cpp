@@ -1,11 +1,12 @@
 #include <pybind11/pybind11.h>
+#include <pybind11/numpy.h>
 #include <pybind11/stl.h>
+
 namespace py = pybind11;
 
 #include "particle_system.h"
 #include "syncable.h"
 
-#include <print>
 
 struct MultithreadedParticleSystem : ParticleSystem {
     MultithreadedParticleSystem(
@@ -47,12 +48,65 @@ struct MultithreadedParticleSystem : ParticleSystem {
         simulation_time += delta_time;
     }
 
+    auto get_entities() -> py::dict
+    {
+        auto n = particles.size();
+        auto x = py::array_t<double>(n);
+        auto y = py::array_t<double>(n);
+        auto m = py::array_t<double>(n);
+        
+        auto *px = x.mutable_data();
+        auto *py_ = y.mutable_data();
+        auto *pm = m.mutable_data();
+        
+        for (size_t i = 0; i < n; ++i) {
+            px[i] = particles[i].x;
+            py_[i] = particles[i].y;
+            pm[i] = particles[i].m;
+        }
+        
+        auto result = py::dict{};
+        result["x"] = x;
+        result["y"] = y;
+        result["m"] = m;
+        return result;
+    }
+
+    auto get_extents() -> py::dict
+    {
+        auto e = ParticleSystem::get_extents();
+        auto n = e.size();
+        auto x0 = py::array_t<double>(n);
+        auto y0 = py::array_t<double>(n);
+        auto x1 = py::array_t<double>(n);
+        auto y1 = py::array_t<double>(n);
+
+        auto *px0 = x0.mutable_data();
+        auto *py0 = y0.mutable_data();
+        auto *px1 = x1.mutable_data();
+        auto *py1 = y1.mutable_data();
+
+        for (size_t i = 0; i < n; ++i) {
+            px0[i] = e[i][0];
+            py0[i] = e[i][1];
+            px1[i] = e[i][2];
+            py1[i] = e[i][3];
+
+        }
+        
+        auto result = py::dict{};
+        result["x0"] = x0;
+        result["y0"] = y0;
+        result["x1"] = x1;
+        result["y1"] = y1;
+        return result;
+    }
+
     auto request_stop() -> void
     {
         pool.request_stop();
     }
 
-    std::vector<std::function<void(void)>> callables{};
     double simulation_time = 0.0;
     double delta_time = 1.0;
     Syncable pool;
@@ -64,6 +118,7 @@ PYBIND11_MODULE(PyModel, m) {
         .def("update", &MultithreadedParticleSystem::update)
         .def("request_stop", &MultithreadedParticleSystem::request_stop)
         .def("get_extents", &MultithreadedParticleSystem::get_extents)
+        .def("get_entities", &MultithreadedParticleSystem::get_entities)
         .def_readwrite("ll", &MultithreadedParticleSystem::ll)
         .def_readwrite("ur", &MultithreadedParticleSystem::ur)
         .def_readwrite("simulation_time", &MultithreadedParticleSystem::simulation_time)
