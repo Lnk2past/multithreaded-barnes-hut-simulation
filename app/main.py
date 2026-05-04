@@ -3,6 +3,8 @@
 Defines a Panel dashboard for visualizing the native ParticleModel extension
 """
 import os
+
+import bokeh.models
 import colorcet as cc
 import holoviews as hv
 import numpy as np
@@ -118,6 +120,19 @@ def reset(event: pr.parameterized.Event | None) -> None:
     particle_pipe.send((particle_data, extent_data))
     table.value = particle_data
     table.disabled = False
+
+    def set_bokeh_range():
+        b = bounds_slider.value
+        doc = pn.state.curdoc
+        # find the figure in the document's roots
+        for root in doc.roots:
+            for renderer in root.select({'type': bokeh.models.Plot}):
+                renderer.x_range.start = -b
+                renderer.x_range.end = b
+                renderer.y_range.start = -b
+                renderer.y_range.end = b
+
+    pn.state.execute(set_bokeh_range)
 
 
 def open_readme(event):
