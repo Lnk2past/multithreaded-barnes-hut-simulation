@@ -23,4 +23,4 @@ jobs:
         uses: docker/build-push-action@v4
         with:
           push: true
-          tags: lnk2past/anaconda-data-app-contest-2023:latest
+          tags: lnk2past/multithreaded-barnes-hut-simulation:latest
