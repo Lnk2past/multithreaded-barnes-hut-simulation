@@ -1,9 +1,28 @@
-FROM mambaorg/micromamba:1.4.5
-COPY --chown=$MAMBA_USER:$MAMBA_USER environment.yml /tmp/env.yaml
-COPY --chown=$MAMBA_USER:$MAMBA_USER app /app
-COPY --chown=$MAMBA_USER:$MAMBA_USER src /src
-RUN micromamba install -y -n base -f /tmp/env.yaml && micromamba clean --all --yes
-WORKDIR /
-ARG MAMBA_DOCKERFILE_ACTIVATE=1
-RUN g++ -shared -fPIC -std=c++20 -isystem/opt/conda/include -isystem/opt/conda/include/python3.11 -Isrc src/bh.cpp -o app/ParticleModel$(python3-config --extension-suffix)
-ENTRYPOINT ["/usr/local/bin/_entrypoint.sh", "panel", "serve", "app", "--allow-websocket-origin=*"]
+FROM lnk2past/turtleshell:latest AS builder
+
+WORKDIR /bh
+
+COPY src src
+COPY Makefile Makefile
+COPY CMakeLists.txt CMakeLists.txt
+COPY conanfile.py conanfile.py
+
+RUN make
+
+FROM lnk2past/turtleshell:latest
+
+WORKDIR /bh
+
+COPY pyproject.toml pyproject.toml
+COPY .python-version .python-version
+COPY uv.lock uv.lock
+COPY app app
+COPY --from=builder /bh/lib /bh/lib
+
+RUN uv sync
+
+ENV PYTHONPATH=/bh/lib
+
+EXPOSE 5006
+
+ENTRYPOINT ["uv", "run", "panel", "serve", "app", "--allow-websocket-origin=*"]
